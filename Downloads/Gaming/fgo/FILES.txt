@@ -1,0 +1,86 @@
+FGO 自动刷本工具集 — 文件清单
+===============================
+
+📁 目录结构
+-----------
+fgo/
+├── common/                       # 共享底层库
+│   ├── __init__.py              # 包初始化
+│   ├── adb.py                   # ADB 操作模块（63行）
+│   └── vision.py                # 图像识别模块（221行）
+│
+├── templates/                    # 模板图片目录（用户自行填充）
+│   └── README.md                # 截图说明详文档
+│
+├── 核心脚本
+│   ├── farmer_lite.py           # 轻量版脚本（345行）
+│   └── farmer_smart.py          # 智能版脚本（404行）
+│
+└── 文档
+    ├── README.md                # 完整功能文档（主读物）
+    ├── QUICKSTART.md            # 5分钟快速开始
+    ├── INSTALL.md               # 详细安装指南
+    ├── SUMMARY.md               # 项目实现总结
+    └── FILES.txt                # 本文件
+
+📊 代码统计
+-----------
+总行数：1041 行
+  - 共享库：292 行
+  - 轻量版：345 行
+  - 智能版：404 行
+
+📝 文件用途速查
+---------------
+
+【启动前必读】
+  1. README.md — 了解功能和选择版本
+  2. INSTALL.md — 按步骤配置环境
+
+【快速上手】
+  - QUICKSTART.md — 5分钟快速开始
+
+【截图指南】
+  - templates/README.md — 模板图片截取说明
+                         + 坐标标定方法
+
+【源代码】
+  - common/adb.py — ADB 操作（截屏、点击、滑动）
+  - common/vision.py — 图像识别（模板匹配、颜色分析）
+  - farmer_lite.py — 轻量版（选择这个用于快速 3T）
+  - farmer_smart.py — 智能版（选择这个用于任意队伍）
+
+【深入理解】
+  - SUMMARY.md — 项目架构、功能对比、后续规划
+
+🚀 使用流程
+-----------
+
+【轻量版流程】
+  1. 读 README.md + QUICKSTART.md
+  2. 按 INSTALL.md 配置环境
+  3. 按 templates/README.md 截图
+  4. 编辑 farmer_lite.py 的 SKILL_SEQUENCE
+  5. 运行：python farmer_lite.py
+
+【智能版流程】
+  1. 读 README.md + QUICKSTART.md
+  2. 按 INSTALL.md 配置环境
+  3. 按 templates/README.md 截图
+  4. （可选）调整坐标常量
+  5. 运行：python farmer_smart.py
+
+✅ 开始前检查清单
+-----------------
+[ ] Python 3.7+ 已安装
+[ ] pip install opencv-python pillow numpy 成功
+[ ] ADB 已安装并在 PATH
+[ ] BlueStacks 分辨率 1280×720
+[ ] BlueStacks ADB 已启用
+[ ] adb connect 127.0.0.1:5555 成功
+[ ] adb devices 能看到设备
+[ ] 至少截了 attack_btn.png 和 result_screen.png
+[ ] 选定了轻量版或智能版
+[ ] 按需修改了脚本配置
+
+祝使用愉快！ 🎉
