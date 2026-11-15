@@ -512,17 +512,14 @@ class ModeBase:
 
     def handle_result_screens(self, timeout=40):
         """战斗结束后处理结算流程（看到什么画面就做什么）：
-          EXP/羁绊页 → 连点画面下方推进
+          EXP/羁绊页（顶上有 RESULT）→ 点画面下方推进
           掉落页「次へ」→ 点次へ
           好友申请框 → 先申请，没反应就「終了する」
           連続出撃框 → 点「連続出撃」→ 若弹 AP 回復就按上限吃苹果
           已回到助战界面 → 结束
+        不再盲点：底部中央 (960,1015) 在助战界面正好是一行助战，画面一换就会点错助战，
+        所以只在认出 RESULT 页时才点。
         """
-        # 1. 连点跳过「点击继续」页（EXP/羁绊/MasterEXP 等）
-        #    点底部中央：继续页会推进；掉落页点这里不会误触战利品
-        for _ in range(10):
-            self.device.tap(960, 1015, delay=0.6)
-
         end = time.time() + timeout
         while time.time() < end:
             screen = self.device.screenshot()
@@ -546,6 +543,9 @@ class ModeBase:
                 return  # 已在助战界面
             if self._seen(screen, self.next_btn_template):
                 self.device.tap(1696, 976, delay=1.2)  # 掉落页「次へ」
+                continue
+            if self._seen(screen, self.result_template, 0.75):
+                self.device.tap(960, 1015, delay=0.6)  # EXP/羁绊页「画面をタッチしてください」
                 continue
             time.sleep(0.6)  # 过场/读条 → 等
         logger.warning("⚠️  结算后没看到 連続出撃 / 助战界面")
