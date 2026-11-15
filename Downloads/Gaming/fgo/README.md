@@ -9,7 +9,7 @@
 ## 启动
 
 ```bash
-cd fgo-auto
+cd fgo-auto/Downloads/Gaming/fgo
 venv/bin/python fgo.py --script-mode 1   # 刷素材
 venv/bin/python fgo.py --script-mode 2   # 刷钱 QP
 venv/bin/python fgo.py                   # 不带参数 → 菜单选 1-6
