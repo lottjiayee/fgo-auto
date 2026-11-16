@@ -1,15 +1,18 @@
-"""Mode 5 - 单刷活动周回（按 records/mode5_turn1.md 实录，2026-11-15 第 2 次演示版）
-队伍：1 号位 Uーオルガマリー（助战）／2 号位 ファントム／3 号位 マーリン，替补第 1 位 諸葛孔明
-第 1 回合：ファントム 技能3、2、1 → 换人（ファントム↔孔明）→ 孔明 1(→1号位)、2、3
-  → マーリン 1、2、3(→1号位) → 御主技能 2(→1号位) → オルガマリー 3、2、1 → Attack → 2 张 Buster + 1 号位宝具（第 3 张）
-之后的回合（没打完时）：同样出卡
-助战：找 Uーオルガマリー —— 名字(support_olga.png) + 礼装(support_olga_ce.png) + 头像(support_olga_face.png)
-  礼装必须对上（REQUIRE_CE）；同一屏里 名字+礼装+头像 > 名字+礼装；
+"""Mode 5 - 90++周回（活动 3 波本，按 records/mode5_turn1.md 实录，2026-11-16 版）
+队伍：1 号位 Uーオルガマリー（助战）／2 号位 諸葛孔明／3 号位 光のコヤンスカヤ，礼装 アトラス院制服，不换人
+第 1 波：オルガマリー 技能2→3→1 → コヤンスカヤ 1 → 孔明 3→2→1(→1号位) → コヤンスカヤ 3(→1号位)、2
+        → 御主技能 3 → Attack → Buster→Quick→Arts（凑 QAB，不放宝具）
+第 2 波：1 号位宝具 → Buster → Buster
+第 3 波：オルガマリー 技能2→3→1 → Attack → Buster 优先、不够补 Arts
+波数看右上角 BATTLE x/3：1 = 第 1 波，3 = 最后一波，其余当第 2 波；同一波没打完时下回合照这一波的出卡
+助战：找 Uーオルガマリー —— 名字(support_olga.png) + 礼装(support_olga_ce.png) + 满破闪光(support_ce_mlb.png) + 头像(support_olga_face.png)
+  礼装必须对上（REQUIRE_CE），而且必须满破：礼装右边有黄绿色闪光（REQUIRE_MLB，满破的活动加成显示 +200%）；
+  同一屏里 名字+礼装+闪光+头像 > 名字+礼装+闪光；
   找不到就一直滑动+刷新，直到找到为止（没有名字模板时才退回点第二行）"""
 import time
 from FGO.fgoLogging import get_logger
 from FGO.fgoDetect import Detect
-from FGO.fgoConst import NORMAL_DELAY
+from FGO.fgoConst import NORMAL_DELAY, COORDINATES
 from FGO.fgoModeBase import ModeBase
 
 logger = get_logger("Mode5")
@@ -17,9 +20,10 @@ logger = get_logger("Mode5")
 # 头像 / 礼装中心相对名字中心的位置（由截图量得，1920x1080）
 FACE_DX, FACE_DY = -434, -66
 CE_DX, CE_DY = -417, 72
+MLB_DX, MLB_DY = -326, 97     # 满破闪光（礼装图右下）中心，2026-11-16 实测：满破 1.00、没满破 0.10–0.39
 
 
-# ---- 实录坐标（1920x1080，2026-11-15 实录）----
+# ---- 实录坐标（1920x1080）----
 # 技能按钮：(从者, 技能) → 坐标
 SKILL = {
     (1, 1): (124, 865), (1, 2): (251, 860), (1, 3): (375, 847),
@@ -27,49 +31,63 @@ SKILL = {
     (3, 1): (1063, 870), (3, 2): (1196, 874), (3, 3): (1319, 864),
 }
 TARGET_SERVANT1 = (490, 580)   # 「対象を選択してください」弹窗里的 1 号位立绘中心
-SKIP_TAP = (1000, 420)         # 战场中间地面：点两下跳过技能动画（在下方头像之上，点到不会开详情）
-SKILL_ANIM_WAIT = 1.0          # 点完跳过后停 1 秒就放下一个（不再等 Attack）
+SKIP_TAP = (1000, 420)         # 战场中间：弹窗没出来要重点时，先在这里点两下跳过动画（点到不会开详情）
+SKILL_ANIM_WAIT = 0.3          # 点完两下跳过后稍停；下一个技能点之前还会等 Attack 按钮回来
 NP_SERVANT1 = (606, 365)       # 选卡界面上方 1 号位宝具
 
 # 御主技能：右侧「マスタースキル」按钮 → 展开 3 个图标
 MASTER_BTN = (1776, 471)
 MASTER_SKILL = {1: (1360, 471), 2: (1473, 471), 3: (1641, 471)}
-# 换人（御主技能 3「オーダーチェンジ」）弹窗
-ORDER_START2 = (500, 500)      # Starting Member 第 2 位（ファントム）
-ORDER_SUB1 = (1100, 500)       # Sub Member 第 1 位（諸葛孔明）
-ORDER_EXEC = (960, 935)        # 「入れ替え実行」
 
-# 第 1 回合步骤：
-#   ("skill", 从者, 技能, 选目标)  选目标: True=要选 1 号位 / False=不用 / None=没录到，放完看一眼有弹窗就选 1 号位
+# 各波放技能的步骤：
+#   ("skill", 从者, 技能, 选目标)  选目标: True=等弹窗选 1 号位 / False=不用 / None=录像里看不清，放完等一下，有弹窗才选 1 号位
 #   ("master", 技能, 选目标)
-#   ("order_change",)
-# 队伍：1 号位 Uーオルガマリー（助战）/ 2 号位 ファントム / 3 号位 マーリン，替补第 1 位 諸葛孔明
-TURN1_STEPS = [
-    ("skill", 2, 3, False), ("skill", 2, 2, False), ("skill", 2, 1, False),  # ファントム 技能3→2→1
-    ("order_change",),                                   # ファントム ↔ 諸葛孔明
-    ("skill", 2, 1, True),                               # 孔明 技能1 → 1 号位
-    ("skill", 2, 2, False), ("skill", 2, 3, False),      # 孔明 技能2、3
-    ("skill", 3, 1, False), ("skill", 3, 2, False),      # マーリン 技能1、2
-    ("skill", 3, 3, True),                               # マーリン 技能3 → 1 号位
-    ("master", 2, True),                                 # 御主技能 2「魔力強化」→ 1 号位（要在オルガマリー 技能之前）
-    ("skill", 1, 3, False), ("skill", 1, 2, False), ("skill", 1, 1, False),  # オルガマリー 技能3→2→1
-]
+STAGE_STEPS = {
+    1: [
+        ("skill", 1, 2, False), ("skill", 1, 3, False), ("skill", 1, 1, False),  # オルガマリー 驚天動地 → 天衣無縫 → 空前絶後
+        ("skill", 3, 1, None),                               # コヤンスカヤ イノベイター・バニー
+        ("skill", 2, 3, False), ("skill", 2, 2, False),      # 孔明 軍師の指揮、軍師の忠言
+        ("skill", 2, 1, True),                               # 孔明 時計塔の奇宝 → 1 号位
+        ("skill", 3, 3, True),                               # コヤンスカヤ NFFスペシャル → 1 号位
+        ("skill", 3, 2, None),                               # コヤンスカヤ 殺戮技巧（人）
+        ("master", 3, None),                                 # アトラス院制服 メジェドの眼
+    ],
+    3: [
+        ("skill", 1, 2, False), ("skill", 1, 3, False), ("skill", 1, 1, False),  # オルガマリー 2→3→1（冷却已转好）
+    ],
+}
+
+# 各波出卡：(先点宝具?, 按顺序要的卡色, 要几张普通卡)；要的颜色没有就用别的卡补满
+STAGE_CARDS = {
+    1: (False, ["buster", "quick", "arts"], 3),               # B→Q→A 凑 QAB
+    2: (True, ["buster", "buster"], 2),                       # 宝具 → B → B
+    3: (False, ["buster"] * 3 + ["arts"] * 3, 3),            # B 优先，不够补 A
+}
 
 
 class Mode5(ModeBase):
-    """Mode 5 - 单刷活动周回（换人孔明、技能和御主技能都给 1 号位 / 2 张 Buster + 1 号位宝具）"""
+    """Mode 5 - 90++周回（第 1、3 波放技能 / 第 2 波宝具）"""
 
-    REQUIRE_CE = True  # True=必须带这张礼装；False=礼装只是加分项
+    REQUIRE_CE = True   # True=必须带这张礼装；False=礼装只是加分项
+    REQUIRE_MLB = True  # True=礼装必须满破（右边有闪光），没有就继续找 / 刷新
     wait_loading_after_start = True  # 第 1 回合就放技能，先等读条结束，免得被开场动画吃掉点击
-    LAST_WAVE_TIMEOUT = 60  # 一回合清场：宝具动画 + BATTLE FINISH 实测约 50s
+    LAST_WAVE_TIMEOUT = 60
+    # 加速（2026-11-16）：读条一结束就开始，不再固定等 8 秒；release_skills 开头还会等 Attack 稳定 1.5 秒
+    LOADING_PRE_WAIT = 0.5
+    LOADING_POLL = 0.3
+    BATTLE_START_SLEEP = 0
+    CARD_TAP_DELAY = 0.35
+    ONLY_SLOT1 = False     # True = 只放 1 号位技能和御主技能，跳过孔明、コヤンスカヤ（试验用，看能不能打过、快多少）
+    SKIP_TAPS = 2          # 放完技能在技能上快速点几下跳过动画（试过 3 下：第 1 波反而慢 8 秒）
 
     def __init__(self, device, card_strategy="chain_buster"):
         super().__init__(device, card_strategy=card_strategy)
         self.olga_name = Detect.load_template("support_olga", template_dir="templates")
         self.olga_face = Detect.load_template("support_olga_face", template_dir="templates")
         self.olga_ce = Detect.load_template("support_olga_ce", template_dir="templates")
+        self.olga_mlb = Detect.load_template("support_ce_mlb", template_dir="templates")
         self.target_select = Detect.load_template("target_select", template_dir="templates")
-        self.order_change = Detect.load_template("order_change", template_dir="templates")  # 换人弹窗「入れ替え実行」
+        self._stages_done = set()
 
     @staticmethod
     def _part_matches(screen, name_pos, template, dx, dy, threshold=0.80):
@@ -90,17 +108,25 @@ class Mode5(ModeBase):
         if not names:
             return None
         need_ce = self.REQUIRE_CE and self.olga_ce is not None  # 没礼装模板就不强制
+        need_mlb = self.REQUIRE_MLB and self.olga_mlb is not None
         best, best_score = None, -1
+        skipped = []
         for pos in names:
             ce = self._part_matches(screen, pos, self.olga_ce, CE_DX, CE_DY)
+            mlb = self._part_matches(screen, pos, self.olga_mlb, MLB_DX, MLB_DY)
             face = self._part_matches(screen, pos, self.olga_face, FACE_DX, FACE_DY)
             if need_ce and not ce:
+                skipped.append("礼装不对")
                 continue
-            score = ce * 2 + face
+            if need_mlb and not mlb:
+                skipped.append("礼装没满破（没闪光）")
+                continue
+            score = ce * 4 + mlb * 2 + face
             if score > best_score:
-                best, best_score, best_desc = pos, score, ("礼装✓" if ce else "礼装✗") + (" 头像✓" if face else " 头像✗")
+                best, best_score = pos, score
+                best_desc = ("礼装✓" if ce else "礼装✗") + (" 满破✓" if mlb else " 满破✗") + (" 头像✓" if face else " 头像✗")
         if best is None:
-            logger.info(f"看到 {len(names)} 个 Uーオルガマリー，但礼装不对，继续找")
+            logger.info(f"看到 {len(names)} 个 Uーオルガマリー，但{'、'.join(dict.fromkeys(skipped))}，继续找")
             return None
         logger.info(f"选中 Uーオルガマリー {best}：{best_desc}")
         return best
@@ -114,13 +140,33 @@ class Mode5(ModeBase):
         self.device.tap(725, 650, delay=NORMAL_DELAY)
         return True
 
-    def is_last_wave(self):
-        """单刷本只有 1 波（BATTLE 1/1），last_wave.png 只认「3」→ 这里每回合都当最后一波，
-        出卡后按最后一波给 35 秒等结算"""
-        return True
+    # ---- 波数 ----
+    # 基类每场只放一次技能（skills_released），这里第 1、3 波都要放 → 改成按波记录。
+    # execute_battle 开场会设 skills_released = False，借这个清空记录。
+    @property
+    def skills_released(self):
+        return False
 
+    @skills_released.setter
+    def skills_released(self, value):
+        if not value:
+            self._stages_done = set()
+
+    def _stage(self):
+        """BATTLE x/3：1 → 1，3 → 3，其余 → 2（看本回合等到 Attack 时那一帧）"""
+        if self.is_wave_1():
+            return 1
+        if self.is_last_wave():
+            return 3
+        return 2
+
+    def should_release_skills(self, wave):
+        stage = self._stage()
+        return stage in STAGE_STEPS and stage not in self._stages_done
+
+    # ---- 放技能 ----
     def _wait_template(self, template, timeout):
-        """等 template 出现；没模板就按旧方式停 0.6 秒当作出现了"""
+        """等 template 出现；没模板就停 0.6 秒当作出现了"""
         if template is None:
             time.sleep(0.6)
             return True
@@ -135,25 +181,51 @@ class Mode5(ModeBase):
         """等「対象を選択してください」弹窗出现"""
         return self._wait_template(self.target_select, timeout)
 
-    def _skip_anim(self):
-        for _ in range(2):
-            self.device.tap(*SKIP_TAP, delay=0.08)  # 快速连点两下
+    def _skip_anim(self, pos=SKIP_TAP):
+        """在 pos 快速点两下跳过技能动画。放完技能后 pos = 刚点的技能按钮：
+        动画中点 = 跳过；动画已结束 = 技能在冷却，点了没反应；第一下被吃掉时这两下还能补放出来"""
+        for _ in range(self.SKIP_TAPS):
+            self.device.tap(*pos, delay=0.12)
         time.sleep(SKILL_ANIM_WAIT)
 
+    def _wait_ready(self, timeout=8):
+        """等到能点下一个技能：一看到 Attack 按钮（≥0.80）就走，不再要求连续 0.5 秒
+        （实测空闲 0.87–1.00，按钮淡出中 0.72–0.73）。
+        中途看到选目标弹窗（本来不用选目标却弹了）→ 选 1 号位，免得卡住"""
+        end = time.time() + timeout
+        while time.time() < end:
+            screen = self.device.screenshot()
+            if screen is None:
+                continue
+            if self.target_select is not None and Detect.find_template(screen, self.target_select, 0.80):
+                logger.info("有选目标弹窗 → 1 号位")
+                self.device.tap(*TARGET_SERVANT1, delay=0.3)
+                continue
+            if self.attack_template is not None and Detect.find_template(screen, self.attack_template, 0.80):
+                return True
+            time.sleep(0.1)
+        logger.info("等 Attack 按钮超时，照样点下一个")
+        return False
+
     def _tap_master(self, skill):
-        """等上一个技能动画播完（Attack 按钮回来）→ 展开御主技能 → 点第 skill 个
-        动画中点「マスタースキル」会被当成跳过动画吃掉，菜单打不开"""
-        self.wait_attack_ready(stable_s=0.5, timeout=8)
+        """展开御主技能 → 点第 skill 个"""
         self.device.tap(*MASTER_BTN, delay=0.8)
         self.device.tap(*MASTER_SKILL[skill], delay=0.3)
 
-    def _use(self, name, tap, need_target):
-        """tap() 点出技能；need_target: True=等弹窗选 1 号位 / False=不选 / None=看一眼，有弹窗才选"""
+    def _use(self, name, tap, need_target, pos=SKIP_TAP):
+        """tap() 点出技能；need_target: True=等弹窗选 1 号位 / False=不选 / None=等一下，有弹窗才选
+        每次点之前先等上一个技能动画播完（看到 Attack 按钮，_wait_ready）：动画中点技能会被当成跳过动画吃掉
+        （实测：空前絶後 动画长，紧接着点 3 号位技能1 被吃掉，技能没放出来）"""
+        raw_tap = tap
+
+        def tap():
+            self._wait_ready()
+            raw_tap()
+
         tap()
         if need_target is None:
-            time.sleep(0.5)
-            if self.target_select is not None and Detect.find_template(
-                    self.device.screenshot(), self.target_select, threshold=0.80):
+            # 先确认有没有弹窗再跳动画：跳动画点在战场中间，弹窗开着时会点到 2 号位
+            if self.target_select is not None and self._wait_target_dialog(timeout=1.2):
                 logger.info(f"{name} 弹出选目标 → 1 号位")
                 self.device.tap(*TARGET_SERVANT1, delay=0.3)
         elif need_target:
@@ -169,49 +241,63 @@ class Mode5(ModeBase):
                 logger.warning(f"{name} 没出现选目标弹窗，跳过")
                 return
             self.device.tap(*TARGET_SERVANT1, delay=0.3)
-        self._skip_anim()
+        self._skip_anim(pos)  # 在刚点的技能附近点两下跳过动画
 
-    def _order_change(self):
-        """御主技能 3 换人：Starting 第 2 位 ↔ Sub 第 1 位 → 入れ替え実行"""
-        logger.info("换人：ファントム ↔ 諸葛孔明")
-        self._tap_master(3)
-        if not self._wait_template(self.order_change, 3):
-            logger.info("换人弹窗没出来，跳过动画后再点一次")
-            self._skip_anim()
-            self._tap_master(3)
-            if not self._wait_template(self.order_change, 3):
-                logger.warning("没出现换人弹窗，跳过换人（后面孔明的技能会点空）")
-                self._skip_anim()
-                return
-        self.device.tap(*ORDER_START2, delay=0.4)
-        self.device.tap(*ORDER_SUB1, delay=0.4)
-        self.device.tap(*ORDER_EXEC, delay=0.3)
-        time.sleep(2.5)                                   # 换人动画
-        self.wait_attack_ready(stable_s=1.0, timeout=15)
-
-    # 第 1 回合放技能（基类默认 should_release_skills: wave == skill_wave == 1）
     def release_skills(self):
-        logger.info("第 1 回合 → 按实录放技能 + 换人 + 御主技能")
-        self.wait_attack_ready(stable_s=1.5, timeout=30)   # 敌方开场 buff 演出结束再开始
-        for step in TURN1_STEPS:
+        stage = self._stage()
+        logger.info(f"第 {stage} 波 → 按实录放技能")
+        self._stages_done.add(stage)
+        self.wait_attack_ready(stable_s=1.5, timeout=30)   # 敌方登场演出结束再开始
+        steps = STAGE_STEPS[stage]
+        if self.ONLY_SLOT1:
+            steps = [st for st in steps if st[0] != "skill" or st[1] == 1]
+        for step in steps:
             if step[0] == "skill":
                 _, servant, skill, need_target = step
                 x, y = SKILL[(servant, skill)]
                 self._use(f"{servant} 号位技能{skill}",
-                          lambda x=x, y=y: self.device.tap(x, y, delay=0.3), need_target)
+                          lambda x=x, y=y: self.device.tap(x, y, delay=0.3), need_target, pos=(x, y))
             elif step[0] == "master":
                 _, skill, need_target = step
-                self._use(f"御主技能{skill}", lambda skill=skill: self._tap_master(skill), need_target)
-            elif step[0] == "order_change":
-                self._order_change()
+                self._use(f"御主技能{skill}", lambda skill=skill: self._tap_master(skill), need_target,
+                          pos=MASTER_SKILL[skill])
         time.sleep(1.0)
 
+    # ---- 出卡 ----
+    def _choose_cards(self, wanted, count):
+        """按 wanted 的颜色顺序挑 count 张；某个颜色没有就跳过，最后用剩下的卡位补满"""
+        time.sleep(0.4)  # 等指令卡界面稳定再截图
+        screen = self.device.screenshot()
+        left = list(self.card_selector.detect_all_cards(screen)) if screen is not None else []
+        chosen = []
+        for color in wanted:
+            if len(chosen) >= count:
+                break
+            for card in left:
+                if card[1] == color:
+                    chosen.append(card[0])
+                    left.remove(card)
+                    break
+        for p in [c[0] for c in left] + list(COORDINATES["card_positions"]):
+            if len(chosen) >= count:
+                break
+            if p not in chosen:
+                chosen.append(p)
+        return chosen
+
     def do_cards(self, wave):
-        """2 张 Buster → 1 号位宝具（第 3 张，跟实录一样）；宝具没出来就补第 3 张卡"""
-        logger.info("出卡 → 2 张 Buster + 1 号位宝具")
-        cards = self.select_buster_cards(3)
-        self.tap_cards(cards[:2])
-        self.device.tap(*NP_SERVANT1, delay=1.2)
-        if self._on_card_select(self.device.screenshot()):
-            logger.info("宝具没出（没充能？）→ 补第 3 张卡")
-            self.tap_cards(cards[2:3])
+        stage = self._stage()
+        use_np, wanted, count = STAGE_CARDS[stage]
+        if use_np:
+            logger.info(f"第 {stage} 波出卡 → 1 号位宝具 + {wanted}")
+            self.device.tap(*NP_SERVANT1, delay=0.5)
+            cards = self._choose_cards(wanted, count + 1)  # 多挑一张备用：宝具没出时补第 3 张
+            self.tap_cards(cards[:count])
+            time.sleep(0.5)
+            if self._on_card_select(self.device.screenshot()):
+                logger.info("宝具没出（没充能？）→ 补第 3 张卡")
+                self.tap_cards(cards[count:count + 1])
+        else:
+            cards = self._choose_cards(wanted, count)
+            logger.info(f"第 {stage} 波出卡（按 {'→'.join(dict.fromkeys(wanted))} 优先）：{cards}")
+            self.tap_cards(cards)

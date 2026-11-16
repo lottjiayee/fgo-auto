@@ -20,7 +20,7 @@ def select_script_mode():
     print("  2. Mode 2 - 刷钱 QP（随机选卡，wave1 放技能，每波宝具）⭐")
     print("  3. Mode 3 - extra1（wave1卡片 / wave2 从者1,2宝具 / wave3 从者2,3宝具+换人技能）")
     print("  4. Mode 4 - 特别活动周回（每波 3 宝具）")
-    print("  5. Mode 5 - 单刷活动周回（换人孔明，技能都给1号位 / 2 Buster + 1号位宝具）")
+    print("  5. Mode 5 - 90++周回（オルガマリー/孔明/光コヤンスカヤ，3 波；第2波宝具）")
     print("  6. Mode 6 - 单刷活动周回 hardcode 版（技能/目标/出卡全按坐标）")
 
     while True:

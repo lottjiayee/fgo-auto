@@ -92,10 +92,12 @@ class ModeBase:
         """优先 Buster"""
         return self.select_typed_cards("buster", count)
 
+    CARD_TAP_DELAY = 0.7  # 两张卡之间的间隔
+
     def tap_cards(self, positions):
         """依次点选卡片"""
         for x, y in positions:
-            self.device.tap(x, y, delay=0.7)
+            self.device.tap(x, y, delay=self.CARD_TAP_DELAY)
 
     def do_cards(self, wave):
         """放宝具 + 选卡。默认：use_np 决定放 1 个宝具(servant3) + select_cards 选卡。
@@ -280,6 +282,9 @@ class ModeBase:
 
     # 进本后是否先等读条结束（Mode2 打开）
     wait_loading_after_start = False
+    LOADING_PRE_WAIT = 2     # 点完助战后、开始看读条前先等几秒
+    LOADING_POLL = 1.0       # 读条中多久看一次
+    BATTLE_START_SLEEP = 8   # 进战斗后固定先等几秒（敌人登场动画）
 
     def _wait_loading_done(self, timeout=90):
         """等读条结束：看到战斗画面右上角「BATTLE x/y」（或攻击按钮）才算进入战斗。
@@ -293,7 +298,14 @@ class ModeBase:
                         and Detect.find_template(screen, self.attack_template, threshold=0.70))):
                 logger.info("✅ 读条结束，进入战斗")
                 return True
-            time.sleep(1)
+            # 首场从编队确认进本：看到クエスト開始就点（連続出撃不会有这个按钮）
+            if screen is not None and self.confirm_btn_template is not None:
+                pos = Detect.find_template(screen, self.confirm_btn_template, 0.70)
+                if pos:
+                    logger.info("看到クエスト開始 → 点")
+                    self.device.tap(pos[0], pos[1], delay=1.0)
+                    continue
+            time.sleep(self.LOADING_POLL)
         logger.warning("⚠️  等读条超时，继续")
         return False
 
@@ -531,10 +543,17 @@ class ModeBase:
                 continue
             if self._seen(screen, self.continue_popup_template):
                 logger.info("連続出撃 → 点「連続出撃」")
-                self.device.tap(1360, 875, delay=2.0)
-                time.sleep(2.0)
-                if self._seen(self.device.screenshot(), self.ap_recover_template, 0.75):
-                    self._handle_ap_recover()
+                self.device.tap(1360, 875, delay=0.5)
+                # 最多等 4 秒看会不会弹 AP 回復；已经到助战界面就不用再等
+                until = time.time() + 4.0
+                while time.time() < until:
+                    shot = self.device.screenshot()
+                    if self._seen(shot, self.ap_recover_template, 0.75):
+                        self._handle_ap_recover()
+                        return
+                    if self._seen(shot, self.support_screen_template):
+                        return
+                    time.sleep(0.2)
                 return
             if self._seen(screen, self.ap_recover_template, 0.75):
                 self._handle_ap_recover()
@@ -553,7 +572,7 @@ class ModeBase:
     def execute_battle(self):
         """执行战斗逻辑直到战斗结束（共享流程）"""
         logger.info("开始战斗...")
-        time.sleep(8)
+        time.sleep(self.BATTLE_START_SLEEP)
         self.skills_released = False  # 每场重置
         self._turn_screen = None
 
@@ -581,8 +600,13 @@ class ModeBase:
                 self.skills_released = True
                 # 技能放完后重新确认攻击按钮位置
                 pos = self.wait_for_attack(timeout=10)
-                if pos != "END":
-                    attack_pos = pos
+                if pos == "END":
+                    # 已经到结算（技能打完了 / 有人手动出了卡）→ 别再点 Attack 和卡位
+                    self._turn_screen = None
+                    logger.info("放技能后已到结算，处理结算...")
+                    self.handle_result_screens()
+                    break
+                attack_pos = pos
 
             on_last_wave = self.is_last_wave()
             logger.info(f"Wave {wave} - 攻击...{'（最后一波）' if on_last_wave else ''}")
@@ -613,18 +637,20 @@ class ModeBase:
                 return False
 
             # 首场有编队确认界面 → 点クエスト開始；連続出撃会直接进本，没有这个按钮属正常
-            for _ in range(2):
+            # 等读条的模式（Mode 2/5）交给 _wait_loading_done 边等边认，省掉这里白找的 ~5 秒
+            for _ in range(0 if self.wait_loading_after_start else 2):
                 pos = Detect.find_template(self.device.screenshot(), self.confirm_btn_template, 0.70)
                 if pos:
                     self.device.tap(pos[0], pos[1], delay=NORMAL_DELAY)
                     break
                 time.sleep(1)
             else:
-                logger.info("没有クエスト開始按钮（連続出撃直接进本）")
+                if not self.wait_loading_after_start:
+                    logger.info("没有クエスト開始按钮（連続出撃直接进本）")
 
             # 等读条结束再开打（Mode2 wave1 就放技能，太早会被开场动画吃掉点击）
             if self.wait_loading_after_start:
-                time.sleep(2)
+                time.sleep(self.LOADING_PRE_WAIT)
                 self._wait_loading_done(timeout=90)  # 活动本读条可能 >40s，看到 BATTLE 就继续
 
             if not self.execute_battle():

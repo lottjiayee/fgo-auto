@@ -27,6 +27,21 @@ SKILL_ANIM_WAIT = 1.0   # 点两下跳过后停 1 秒就放下一个（不再等
 class Mode6(Mode5):
     """Mode 6 - 单刷活动周回 hardcode 版（技能/目标/出卡全按坐标）"""
 
+    # Mode 5 现在是 3 波本（按 BATTLE x/3 分波放技能），这里还是单波本的旧规则：
+    # 不跟 Mode 5 的加速：hardcode 版靠固定等待，保留原来的时间
+    LOADING_PRE_WAIT = 2
+    LOADING_POLL = 1.0
+    BATTLE_START_SLEEP = 8
+    CARD_TAP_DELAY = 0.7
+    SKIP_TAPS = 2
+
+    def should_release_skills(self, wave):
+        return wave == 1  # 只在第 1 回合放技能
+
+    def is_last_wave(self):
+        """单刷本只有 1 波（BATTLE 1/1），last_wave.png 只认「3」→ 每回合都当最后一波"""
+        return True
+
     def release_skills(self):
         logger.info("第 1 回合 → 按坐标放 9 个技能（目标都给 1 号位，不检查弹窗）")
         self.wait_attack_ready(stable_s=1.5, timeout=30)   # 敌方开场 buff 演出结束再开始

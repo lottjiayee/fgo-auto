@@ -4,7 +4,7 @@
 
 ![战斗画面](https://raw.githubusercontent.com/lottjiayee/fgo-auto/main/Downloads/Gaming/fgo/docs/images/02_battle.jpg)
 
-- 6 种模式：刷素材 / 刷 QP / 3 波本固定打法 / 活动周回 / 活动单刷（认图版和 hardcode 版）
+- 6 种模式：刷素材 / 刷 QP / 3 波本固定打法 / 活动周回 / 90++周回 / 活动单刷 hardcode 版
 - 每一步先确认画面再点，画面不对就等，不乱点
 - 启动时输入要吃几个苹果，吃满或 AP 用完自动停
 

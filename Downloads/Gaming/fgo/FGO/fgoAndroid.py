@@ -40,9 +40,30 @@ class Android:
         logger.error(f"❌ 设备连接失败: {self.device}（已重试 {retries} 次）")
         return False
 
+    use_raw_screencap = True  # 原始像素比 PNG 快一倍（实测 0.3–0.5s vs 0.7–1.0s，省了模拟器里压 PNG）
+
+    def _screenshot_raw(self):
+        """screencap 不加 -p：头部 12/16 字节（宽、高、格式）+ RGBA 像素"""
+        out = subprocess.run(f"adb -s {self.device} exec-out screencap",
+                             shell=True, capture_output=True, timeout=10).stdout
+        if len(out) < 12:
+            return None
+        w, h, fmt = (int.from_bytes(out[i:i + 4], "little") for i in (0, 4, 8))
+        size = w * h * 4
+        if fmt != 1 or not (0 < w <= 8192 and 0 < h <= 8192) or len(out) < size + 12:
+            return None  # 不是 RGBA_8888 → 交给 PNG
+        pixels = np.frombuffer(out[len(out) - size:], dtype=np.uint8).reshape(h, w, 4)
+        return cv2.cvtColor(pixels, cv2.COLOR_RGBA2BGR)
+
     def screenshot(self):
-        """截取屏幕"""
+        """截取屏幕（BGR）。先取原始像素，不行再用 PNG"""
         try:
+            if self.use_raw_screencap:
+                img = self._screenshot_raw()
+                if img is not None:
+                    return img
+                self.use_raw_screencap = False
+                logger.info("原始截图格式不支持，改用 PNG 截图")
             result = subprocess.run(
                 f"adb -s {self.device} exec-out screencap -p",
                 shell=True, capture_output=True, timeout=10
